@@ -147,6 +147,10 @@ class DepthDataset(Dataset):
             img = img.astype(np.float32)
             # Normalize or scale the depth values if required
             img = img / img.max()
+                
+            if img.ndim == 2:
+                img = img[np.newaxis, ...]
+
             return img
 
         else:
@@ -173,10 +177,9 @@ class DepthDataset(Dataset):
         assert img.size == depth.size, \
             f'Image and depth map {name} should be the same size, but are {img.size} and {depth.size}'
 
+
         img = self.preprocess(img, self.scale, is_depth=False)
         depth = self.preprocess(depth, self.scale, is_depth=True)
-
-        return {
-            'image': torch.as_tensor(img.copy()).float().contiguous(),
-            'depth': torch.as_tensor(depth.copy()).float().contiguous()
-        }
+        ret_dict = {'image': torch.as_tensor(img.copy()).float().contiguous(),
+                    'depth': torch.as_tensor(depth.copy()).float().contiguous()}
+        return ret_dict
