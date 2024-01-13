@@ -26,9 +26,17 @@ from tqdm import tqdm
 from utils.data_loading import DepthDataset  # A custom dataset class for depth maps
 from utils.metrics import depth_error_metric
 
-dir_img = Path('data/training_set/cloth_test')
-dir_mask = Path('data/training_set/distances_test')
+dir_img = Path('data/training_set/cloth')
+dir_mask = Path('data/training_set/distances')
 dir_checkpoint = Path('./checkpoints/')
+
+def get_latest_checkpoint(checkpoint_dir):
+    """Get the latest checkpoint file from the given directory."""
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pth')]
+    if not checkpoint_files:
+        return None
+    latest_checkpoint = max(checkpoint_files, key=lambda f: os.path.getctime(os.path.join(checkpoint_dir, f)))
+    return os.path.join(checkpoint_dir, latest_checkpoint)
 
 
 def train_model(
@@ -36,12 +44,13 @@ def train_model(
         device,
         epochs: int = 5,
         batch_size: int = 10,
-        learning_rate: float = 1e-5,
+        learning_rate: float = 1e-2,
         val_percent: float = 0.1,
         save_checkpoint: bool = True,
         img_scale: float = 0.5,
         amp: bool = False,
         gradient_clipping: float = 1.0,
+        #weight_decay: float = 1e-8,
 ):
     # 1. Create dataset for depth estimation
     # Assuming DepthDataset is a custom class similar to BasicDataset but for depth maps
@@ -53,7 +62,7 @@ def train_model(
     train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
 
     # 3. Begin training
-    optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001, amsgrad=False)
     # Use Mean Squared Error Loss for depth estimation
     criterion = nn.MSELoss()
 
@@ -141,7 +150,6 @@ def train_model(
                         val_score = evaluate(model, val_loader, device, amp)
                         logging.info('Validation score: {}'.format(val_score))
 
-
         if save_checkpoint:
             Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
@@ -152,8 +160,8 @@ def train_model(
 def get_args():
     parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
     parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
-    parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=5, help='Batch size')
-    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-5,
+    parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=15, help='Batch size')
+    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-3,
                         help='Learning rate', dest='lr')
     parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
@@ -161,7 +169,7 @@ def get_args():
                         help='Percent of the data that is used as validation (0-100)')
     parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
     parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
-    parser.add_argument('--classes', '-c', type=int, default=2, help='Number of classes')
+    parser.add_argument('--classes', '-c', type=int, default=1, help='Number of classes')
 
     return parser.parse_args()
 
@@ -178,6 +186,14 @@ if __name__ == '__main__':
     # n_classes is the number of probabilities you want to get per pixel
     model = UNet(n_channels=1, n_classes=1)
     model = model.to(device=device)
+
+    latest_checkpoint = get_latest_checkpoint(dir_checkpoint)
+    if latest_checkpoint:
+        logging.info(f'Loading model from latest checkpoint: {latest_checkpoint}')
+        state_dict = torch.load(latest_checkpoint, map_location=device)
+        model.load_state_dict(state_dict)
+    else:
+        logging.info('No checkpoint found. Starting training from scratch.')
 
     logging.info(f'Network:\n'
                  f'\t{model.n_channels} input channels\n'

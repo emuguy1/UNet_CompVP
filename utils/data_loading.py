@@ -146,7 +146,7 @@ class DepthDataset(Dataset):
             # Assuming depth map is a single channel image
             img = img.astype(np.float32)
             # Normalize or scale the depth values if required
-            img = img / img.max()
+            #img = img / img.max()
                 
             if img.ndim == 2:
                 img = img[np.newaxis, ...]
@@ -159,8 +159,8 @@ class DepthDataset(Dataset):
             else:
                 img = img.transpose((2, 0, 1))
 
-            if (img > 1).any():
-                img = img / 255.0
+            #if (img > 1).any():
+             #   img = img / 255.0
 
             return img
 
