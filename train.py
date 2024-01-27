@@ -30,6 +30,26 @@ dir_img = Path('data/training_set/cloth')
 dir_mask = Path('data/training_set/distances')
 dir_checkpoint = Path('./checkpoints/')
 
+
+def custom_loss(output, target, input, dark_threshold=80, dark_weight=2.0):
+    """
+    Custom loss function that penalizes dark areas in the output where the input is also dark.
+    :param output: Predicted depth map.
+    :param target: Target depth map.
+    :param input: Input image.
+    :param dark_threshold: Threshold to classify pixels as 'dark' in the input.
+    :param dark_weight: Additional weight for loss in dark areas.
+    :return: Loss value.
+    """
+    mse_loss = F.mse_loss(output, target)  # Standard MSE loss
+
+    # Identify dark regions in the input
+    dark_regions = (input < dark_threshold).float()
+    dark_region_loss = F.mse_loss(output * dark_regions, target * dark_regions)
+    # Combine the standard loss with the dark region loss
+    combined_loss = mse_loss + dark_weight * dark_region_loss
+    return combined_loss
+
 def get_latest_checkpoint(checkpoint_dir):
     """Get the latest checkpoint file from the given directory."""
     checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pth')]
@@ -62,7 +82,7 @@ def train_model(
     train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
 
     # 3. Begin training
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001, amsgrad=False)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate,  weight_decay=0.001)
     # Use Mean Squared Error Loss for depth estimation
     criterion = nn.MSELoss()
 
@@ -109,7 +129,7 @@ def train_model(
 
                 # Forward pass
                 depth_pred = model(images)
-                loss = criterion(depth_pred, depth_maps)
+                loss = custom_loss(depth_pred, depth_maps, images)
 
                 # Backward and optimize
                 grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
@@ -150,7 +170,7 @@ def train_model(
                         val_score = evaluate(model, val_loader, device, amp)
                         logging.info('Validation score: {}'.format(val_score))
 
-        if save_checkpoint:
+        if epoch % 10 == 0:
             Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
             torch.save(state_dict, str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
@@ -159,15 +179,15 @@ def train_model(
 
 def get_args():
     parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
-    parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
+    parser.add_argument('--epochs', '-e', metavar='E', type=int, default=50 , help='Number of epochs')
     parser.add_argument('--batch-size', '-b', dest='batch_size', metavar='B', type=int, default=15, help='Batch size')
-    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-3,
+    parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=0.0001,
                         help='Learning rate', dest='lr')
     parser.add_argument('--load', '-f', type=str, default=False, help='Load model from a .pth file')
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
     parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
                         help='Percent of the data that is used as validation (0-100)')
-    parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
+    parser.add_argument('--amp', action='store_true', default=True, help='Use mixed precision')
     parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
     parser.add_argument('--classes', '-c', type=int, default=1, help='Number of classes')
 
@@ -233,3 +253,4 @@ if __name__ == '__main__':
             val_percent=args.val / 100,
             amp=args.amp
         )
+

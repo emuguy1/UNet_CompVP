@@ -28,7 +28,7 @@ def predict_depth(net, full_img, device, scale_factor=0.5):
 
 def get_args():
     parser = argparse.ArgumentParser(description='Predict masks from input images')
-    parser.add_argument('--model', '-m', default='/home/cip/2022/ce90tate/UNet_CompVP/checkpoints/checkpoint_epoch2.pth', metavar='FILE',
+    parser.add_argument('--model', '-m', default='/home/cip/2022/ce90tate/UNet_CompVP/checkpoints/checkpoint_epoch10.pth', metavar='FILE',
                         help='Specify the file in which the model is stored')
     parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', help='Filenames of input images', required=True)
     parser.add_argument('--output', '-o', metavar='OUTPUT', nargs='+', help='Filenames of output images')
@@ -49,7 +49,8 @@ def get_output_filenames(args):
     def _generate_name(fn):
         return f'{os.path.splitext(fn)[0]}_OUT.png'
 
-    return args.output or list(map(_generate_name, args.input))
+    return list(map(_generate_name, args))
+
 
 
 def depth_to_image(depth: np.ndarray):
@@ -63,8 +64,8 @@ if __name__ == '__main__':
     args = get_args()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-    in_files = args.input
-    out_files = get_output_filenames(args)
+    in_files = args.input[0].split(",")
+    out_files = get_output_filenames(in_files)
 
     net = UNet(n_channels=1, n_classes=1, bilinear=args.bilinear)
 
